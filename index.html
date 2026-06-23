@@ -44,6 +44,7 @@
   .work-table .blank { color:#bbb; text-align:right; }
 .work-table .amt { text-align:right; white-space:nowrap; }
 .work-table .amt.muted { color:#bbb; }
+td.mcell.muted, td.pcell.muted { color:#bbb; }
 .live-note { font-size:12px; color:#2c5f2e; background:#eef3ec; border:1px solid #cfe0cf; border-radius:6px; padding:8px 12px; margin-bottom:12px; line-height:1.4; }
 .load-err { font-size:12px; color:#a33; background:#fdecec; border:1px solid #f3c2c2; border-radius:6px; padding:8px 12px; margin-bottom:12px; line-height:1.4; }
 .sheet-link { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#fff; background:#2c5f2e; border:1px solid #244c26; border-radius:6px; padding:7px 14px; text-decoration:none; margin:0 0 14px; }
@@ -199,6 +200,7 @@ const PLANT_GID={1:'1450327897',2:'1841112141',3:'2125942696',4:'858742049',5:'5
 const NURSERY_GID=['81839430','2143642251','1251396066','147929367'];
 const SPECIES_SHEET='1rLIDWKhjqccWEgsp3FXac0aaj1570_N5IY3tcRqsFvM';
 const SPECIES_GID='166857448';
+const MONITOR_SHEET='13A00JXXQWG5nTSbIQR_RaULVtVyRVEX12JLGv5nM2Sw';
 let gvizSeq=0;
 function gvizFetch(sheetId,gid){
   return new Promise((resolve,reject)=>{
@@ -231,6 +233,43 @@ function fillTables(content,map){
 function markError(content){
   content.querySelectorAll('td.amt').forEach(td=>{td.textContent='—'; td.classList.add('muted');});
   if(!content.querySelector('.load-err')){ const n=document.createElement('div'); n.className='load-err'; n.textContent='Could not load live figures — check internet and that the Sheet is shared (Anyone with link → Viewer), then refresh.'; content.prepend(n); }
+}
+function errNote(el){ if(!el.querySelector('.load-err')){ const n=document.createElement('div'); n.className='load-err'; n.textContent='Could not load live figures — check internet and that the Sheet is shared (Anyone with link → Viewer), then refresh.'; el.prepend(n); } }
+function loadMaterial(containerId, gid, ctxLen, nMat){
+  const el=document.getElementById(containerId);
+  gvizFetch(MONITOR_SHEET, gid).then(rows=>{
+    const map={};
+    rows.forEach(r=>{ const c=r.c||[]; const sno=cellNum(c[0]); if(sno===null) return;
+      const arr=[]; for(let mi=0;mi<nMat;mi++){ const b=ctxLen+mi*3; arr.push({q:cellNum(c[b]),a:cellNum(c[b+1]),e:cellNum(c[b+2])}); }
+      map[sno]=arr;
+    });
+    const tot=[]; for(let mi=0;mi<nMat;mi++) tot.push({q:0,a:0,e:0,any:{q:false,a:false,e:false}});
+    el.querySelectorAll('td.mcell[data-sno]').forEach(td=>{
+      const sno=+td.dataset.sno, mi=+td.dataset.m, f=td.dataset.f;
+      const rec=(map[sno]&&map[sno][mi])||{}; const val=(rec[f]===undefined||rec[f]===null)?null:rec[f];
+      td.textContent=(val===null)?'—':inr(val); td.classList.toggle('muted',val===null);
+      if(val!==null){ tot[mi][f]+=val; tot[mi].any[f]=true; }
+    });
+    el.querySelectorAll('td.mcell[data-tot]').forEach(td=>{
+      const mi=+td.dataset.m, f=td.dataset.f;
+      td.textContent=tot[mi].any[f]?inr(tot[mi][f]):'—'; td.classList.toggle('muted',!tot[mi].any[f]);
+    });
+  }).catch(()=>{ el.querySelectorAll('td.mcell').forEach(td=>{td.textContent='—';}); errNote(el); });
+}
+function loadPhysical(){
+  const tbody=document.getElementById('monBody');
+  gvizFetch(MONITOR_SHEET, '361700575').then(rows=>{
+    const map={}; rows.forEach(r=>{ const c=r.c||[]; const sno=cellNum(c[0]); if(sno!==null) map[sno]=c; });
+    const pct={4:1,5:1,6:1,7:1,11:1};
+    tbody.querySelectorAll('td.pcell[data-sno]').forEach(td=>{
+      const sno=+td.dataset.sno, col=+td.dataset.col, c=map[sno];
+      let raw = (c && c[col]) ? c[col].v : null;
+      if(raw===null||raw===undefined||raw===''){ td.textContent='—'; td.classList.add('muted'); return; }
+      td.classList.remove('muted');
+      if(pct[col] && typeof raw==='number'){ td.textContent=(Number.isInteger(raw)?raw:raw.toFixed(1))+'%'; }
+      else { td.textContent=(typeof raw==='number')?inr(raw):String(raw); }
+    });
+  }).catch(()=>{ tbody.querySelectorAll('td.pcell').forEach(td=>{td.textContent='—';}); });
 }
 function renderSiteList() {
   let html = '';
@@ -295,18 +334,20 @@ function renderMonitoring() {
   sites.forEach(s => {
     const area = (s.area===null) ? '—' : Number(s.area).toLocaleString('en-IN');
     const target = (s.plants===null) ? '—' : inr(s.plants);
+    const pc = col => '<td class="pcell muted" data-sno="'+s.no+'" data-col="'+col+'">…</td>';
     html += '<tr>'
       + '<td>'+s.no+'</td>'
       + '<td class="comp-cell">'+s.comp+'</td>'
       + '<td>'+(s.range||'—')+'</td>'
       + '<td>'+area+'</td>'
-      + '<td class="blank">—</td><td class="blank">—</td><td class="blank">—</td><td class="blank">—</td>'
-      + '<td class="blank">—</td><td class="blank">—</td>'
+      + pc(4)+pc(5)+pc(6)+pc(7)
+      + pc(8)+pc(9)
       + '<td>'+target+'</td>'
-      + '<td class="blank">—</td>'
+      + pc(11)
       + '</tr>';
   });
   document.getElementById('monBody').innerHTML = html;
+  loadPhysical();
 }
 const fenceMaterials = [
   {name:"Prestressed Poles", unit:"Nos"},
@@ -346,13 +387,14 @@ function materialTable(contextHeaders, rows, materials) {
   h2 += '</tr>';
   let body = '';
   rows.forEach(r => {
+    const sno = r[0];
     body += '<tr>';
     r.forEach((c,ci) => body += '<td'+(ci===1?' class="comp-cell"':'')+'>'+c+'</td>');
-    materials.forEach(m => body += '<td class="blank mat-sub">—</td><td class="blank">—</td><td class="blank">—</td>');
+    materials.forEach((m,mi) => body += '<td class="mcell mat-sub muted" data-sno="'+sno+'" data-m="'+mi+'" data-f="q">…</td><td class="mcell muted" data-sno="'+sno+'" data-m="'+mi+'" data-f="a">…</td><td class="mcell muted" data-sno="'+sno+'" data-m="'+mi+'" data-f="e">…</td>');
     body += '</tr>';
   });
   let tot = '<tr style="background:#eef3ec;font-weight:bold"><td colspan="'+nctx+'" style="text-align:right">TOTAL</td>';
-  materials.forEach(m => tot += '<td class="blank mat-sub">—</td><td class="blank">—</td><td class="blank">—</td>');
+  materials.forEach((m,mi) => tot += '<td class="mcell mat-sub muted" data-tot="1" data-m="'+mi+'" data-f="q">…</td><td class="mcell muted" data-tot="1" data-m="'+mi+'" data-f="a">…</td><td class="mcell muted" data-tot="1" data-m="'+mi+'" data-f="e">…</td>');
   tot += '</tr>';
   return '<div class="table-scroll"><table class="simple-table mat-table"><thead>'+h1+h2+'</thead><tbody>'+body+tot+'</tbody></table></div>';
 }
@@ -361,9 +403,12 @@ const siteCtx = ["S.No.","Compartment No.","Range","Area (Ha.)"];
 renderSiteList();
 renderMonitoring();
 document.getElementById('fenceTable').innerHTML = materialTable(siteCtx, siteRows, fenceMaterials);
+loadMaterial('fenceTable','1095704717',4,5);
 document.getElementById('plantTable').innerHTML = materialTable(siteCtx, siteRows, plantMaterials);
+loadMaterial('plantTable','1024220314',4,7);
 const nurseryRows = nurseries.map((n,i) => [i+1, n.name, n.range]);
 document.getElementById('nurseryMatTable').innerHTML = materialTable(["S.No.","Nursery","Range"], nurseryRows, nurseryMaterials);
+loadMaterial('nurseryMatTable','653866269',3,9);
 
 function renderNurseryList() {
   let html = '';
