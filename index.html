@@ -76,6 +76,19 @@
   .soon-card b { font-size:14.5px; color:var(--ink); }
   .soon-card p { font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.45; }
   .soon-tag { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--brand-d); background:var(--brand-soft); padding:2px 8px; border-radius:20px; margin-left:6px; vertical-align:middle; }
+  .toprow { margin:9px 0; }
+  .topmeta { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:4px; }
+  .toprank { width:18px; height:18px; border-radius:5px; background:var(--brand-soft); color:var(--brand-d); font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .topname { flex:1; color:var(--ink); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .topval { color:var(--muted); font-variant-numeric:tabular-nums; flex-shrink:0; }
+  .topbar { height:7px; background:#eef1ee; border-radius:4px; overflow:hidden; }
+  .topfill { height:100%; background:linear-gradient(90deg,var(--brand),#3a9457); border-radius:4px; }
+  .mini-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .mini-table th { text-align:left; color:var(--muted); font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:.4px; padding:6px 8px; border-bottom:1px solid var(--line); }
+  .mini-table th.n, .mini-table td.n { text-align:right; }
+  .mini-table td { padding:8px 8px; border-bottom:1px solid var(--line); color:var(--ink); font-variant-numeric:tabular-nums; }
+  .mini-table tbody tr:last-child td { border-bottom:none; }
+  .mini-table tbody tr:hover { background:var(--brand-soft); }
 
   .ov-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; }
   .ov-card { background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
@@ -758,7 +771,40 @@ function renderOverview(){
     +'<div class="donut-meta"><div><b>'+inr(nProd)+'</b><span>produced</span></div><div><b>'+inr(nTarget)+'</b><span>target</span></div></div>'
     +'</div></div>';
 
-  el.innerHTML=k+'<div class="ov-grid">'+c1+c2+cD+c3+c4+'</div>';
+  var topSites=sites.filter(function(s){return typeof s.plants==='number';}).sort(function(a,b){return b.plants-a.plants;}).slice(0,8);
+  var maxTop=topSites.length?topSites[0].plants:0;
+  var cTop='<div class="ov-card"><h3>🏆 Top Sites by Target Plants</h3><div class="body">';
+  topSites.forEach(function(s,i){
+    var w=maxTop?Math.max(s.plants/maxTop*100,2):0;
+    cTop+='<div class="toprow"><div class="topmeta"><span class="toprank">'+(i+1)+'</span>'
+      +'<span class="topname">'+s.comp+'</span><span class="topval">'+inr(s.plants)+'</span></div>'
+      +'<div class="topbar"><div class="topfill" style="width:'+w+'%"></div></div></div>';
+  });
+  cTop+='</div></div>';
+
+  var sch={}, schOrder=[];
+  nurseryPlants.forEach(function(n){
+    var m=n.mad||'अन्य';
+    if(!sch[m]){ sch[m]={t:0,p:0,c:0}; schOrder.push(m); }
+    sch[m].t+=(n.lakshya||0); sch[m].p+=(n.prapti||0); sch[m].c++;
+  });
+  var cScheme='<div class="ov-card"><h3>💰 Nursery Production by Scheme</h3><div class="body">';
+  schOrder.forEach(function(m){
+    var d=sch[m], pct=d.t?Math.round(d.p/d.t*100):0, low=pct<50?' low':'';
+    cScheme+='<div class="prog"><div class="top"><b>'+m+' <span class="pill">'+d.c+' nurser'+(d.c>1?'ies':'y')+'</span></b><span>'+inr(d.p)+' / '+inr(d.t)+' &middot; '+pct+'%</span></div>'
+      +'<div class="track"><div class="fill'+low+'" style="width:'+Math.min(pct,100)+'%"></div></div></div>';
+  });
+  cScheme+='</div></div>';
+
+  var cRange='<div class="ov-card"><h3>📊 Range Comparison</h3><div class="body"><table class="mini-table">'
+    +'<thead><tr><th>Range</th><th class="n">Sites</th><th class="n">Area&nbsp;(ha)</th><th class="n">Target</th><th class="n">Plants/ha</th></tr></thead><tbody>';
+  byPlants.forEach(function(r){
+    var d=ranges[r], dens=d.area?Math.round(d.plants/d.area):0;
+    cRange+='<tr><td>'+r+'</td><td class="n">'+d.sites+'</td><td class="n">'+inr(round2(d.area))+'</td><td class="n">'+inr(d.plants)+'</td><td class="n">'+inr(dens)+'</td></tr>';
+  });
+  cRange+='</tbody></table></div></div>';
+
+  el.innerHTML=k+'<div class="ov-grid">'+c1+c2+cRange+cTop+cD+c3+cScheme+c4+'</div>';
 }
 </script>
 </body>
