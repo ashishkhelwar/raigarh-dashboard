@@ -6,4 +6,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  // Emit ASCII-only output (non-ASCII characters become \uXXXX escapes).
+  // Renders identically at runtime and keeps the bundle free of raw
+  // non-ASCII bytes.
+  esbuild: { charset: "ascii" },
 });
