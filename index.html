@@ -89,6 +89,27 @@
   .mini-table td { padding:8px 8px; border-bottom:1px solid var(--line); color:var(--ink); font-variant-numeric:tabular-nums; }
   .mini-table tbody tr:last-child td { border-bottom:none; }
   .mini-table tbody tr:hover { background:var(--brand-soft); }
+  .mini-table tr.tot td { font-weight:800; background:#f4f7f4; }
+  .exp-wrap { margin-bottom:20px; }
+  .exp-card h3 { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .exp-actions { display:flex; align-items:center; gap:8px; }
+  .btn-sm { font:inherit; font-size:11.5px; font-weight:700; padding:5px 11px; border-radius:7px; border:1px solid var(--brand-line); background:#fff; color:var(--brand-d); cursor:pointer; }
+  .btn-sm:disabled { opacity:.55; cursor:default; }
+  .live-badge { font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--brand-d); background:#fff; border:1px solid var(--brand-line); padding:2px 8px; border-radius:20px; display:inline-flex; align-items:center; gap:5px; }
+  .live-badge i { width:7px; height:7px; border-radius:50%; background:#2e7d32; display:inline-block; }
+  .exp-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:12px; margin-bottom:6px; }
+  .exp-stat { border:1px solid var(--line); border-radius:9px; padding:12px 14px; background:#fbfcfb; }
+  .exp-stat .l { font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .exp-stat .v { font-size:20px; font-weight:800; color:var(--ink); margin-top:4px; font-variant-numeric:tabular-nums; }
+  .exp-stat .s { font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .exp-stat.neg .v, .flag { color:#b3261e; font-weight:700; }
+  .exp-meter { height:10px; background:#eef1ee; border-radius:5px; overflow:hidden; margin-top:8px; }
+  .exp-meter div { height:100%; background:var(--brand); border-radius:5px; }
+  .exp-meter div.over { background:#b3261e; }
+  .exp-sec { font-size:11px; font-weight:800; color:var(--brand-d); text-transform:uppercase; letter-spacing:.5px; margin:18px 0 8px; }
+  .exp-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:22px; }
+  .exp-det summary { cursor:pointer; font-size:12.5px; font-weight:700; color:var(--brand-d); padding:10px 0 6px; }
+  .exp-foot { font-size:11px; color:var(--muted); margin-top:12px; line-height:1.5; }
 
   .ov-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; }
   .ov-card { background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
@@ -711,6 +732,120 @@ function donut(pct){
     +'<text class="donut-lbl" x="60" y="78">produced</text>'
     +'</svg></div>';
 }
+
+// ===== Division expenditure roll-up: sums every site's sheet with the same parser as §2 =====
+var expRoll;
+function inrShort(n){ var a=Math.abs(n); if(a>=1e7) return '₹'+(n/1e7).toFixed(2)+' Cr'; if(a>=1e5) return '₹'+(n/1e5).toFixed(2)+' L'; return '₹'+inr(Math.round(n)); }
+function utilPct(a,e){ return a>0 ? Math.round(e/a*1000)/10 : null; }
+function siteExpTotals(rows){
+  // Same map as openSite → fillTables; only the 48 standard works count (Year 1 = S.No. 1–23, Year 2 = 24–48).
+  var m=rowsToMap(rows,4,5), t={a1:0,e1:0,a2:0,e2:0,any:false,dup:false,extra:false}, seen={};
+  rows.forEach(function(r){ var c=r.c||[], s=cellNum(c[0]);
+    if(s===null||!Number.isInteger(s)||s<1) return;
+    seen[s]=(seen[s]||0)+1;
+    if(s>48&&(cellNum(c[4])!==null||cellNum(c[5])!==null)) t.extra=true;
+  });
+  for(var s=1;s<=48;s++){ var r=m[s]; if(!r) continue;
+    if(seen[s]>1) t.dup=true;
+    if(r.a!==null||r.e!==null) t.any=true;
+    if(s<=23){ t.a1+=r.a||0; t.e1+=r.e||0; } else { t.a2+=r.a||0; t.e2+=r.e||0; }
+  }
+  t.a=t.a1+t.a2; t.e=t.e1+t.e2;
+  return t;
+}
+function fetchSiteExp(no,tries){ return gvizFetch(PLANT_SHEET,PLANT_GID[no]).catch(function(err){ if(tries>0) return fetchSiteExp(no,tries-1); throw err; }); }
+function startExpRollup(){
+  var run={status:'loading',sites:{},done:0,loadedAt:null};
+  expRoll=run; renderExpRollup();
+  var queue=sites.map(function(s){return s.no;}), active=0;
+  function next(){
+    if(expRoll!==run) return;
+    if(!queue.length&&active===0){ run.status='done'; run.loadedAt=new Date(); renderExpRollup(); return; }
+    while(active<6&&queue.length){
+      var no=queue.shift(); active++;
+      (function(no){
+        var p=PLANT_GID[no] ? fetchSiteExp(no,1).then(function(rows){ var t=siteExpTotals(rows); t.ok=true; run.sites[no]=t; }) : Promise.reject(new Error('no sheet'));
+        p.catch(function(){ run.sites[no]={ok:false}; }).then(function(){ active--; run.done++; if(expRoll===run){ if(run.status==='loading') renderExpRollup(); next(); } });
+      })(no);
+    }
+  }
+  next();
+}
+function expRow(label,a,e,extra){
+  var b=a-e, u=utilPct(a,e), over=e>a;
+  return '<td class="n">'+inr(round2(a))+'</td><td class="n">'+inr(round2(e))+'</td>'
+    +'<td class="n'+(b<0?' flag':'')+'">'+inr(round2(b))+'</td>'
+    +'<td class="n'+(over?' flag':'')+'">'+(u===null?'—':u+'%')+(over?' ⚠':'')+'</td>';
+}
+function renderExpRollup(){
+  var el=document.getElementById('expRoll'); if(!el) return;
+  var openDet=!!el.querySelector('details[open]');
+  var st=expRoll||{status:'loading',sites:{},done:0}, total=sites.length, loading=st.status!=='done';
+  var badge=loading?'<span class="live-badge"><span class="spinner"></span>Loading</span>':'<span class="live-badge"><i></i>Live</span>';
+  var h='<div class="ov-card exp-card"><h3><span>💰 Plantation Expenditure — Division Roll-up</span><span class="exp-actions">'+badge
+    +'<button class="btn-sm" onclick="startExpRollup()"'+(loading?' disabled':'')+'>↻ Reload</button></span></h3><div class="body">';
+  if(loading){
+    var pct=total?Math.round(st.done/total*100):0;
+    h+='<div class="live-note"><span class="spinner"></span> Summing expenditure live from all '+total+' site sheets… '+st.done+' / '+total+'</div>'
+      +'<div class="exp-meter" title="'+st.done+' of '+total+' sites loaded"><div style="width:'+pct+'%"></div></div></div></div>';
+    el.innerHTML=h; return;
+  }
+  var A=0,E=0,A1=0,E1=0,A2=0,E2=0,withData=0,failed=[],empty=[],flags=0,overSites=0,rg={},rgOrder=[];
+  sites.forEach(function(s){
+    var t=st.sites[s.no];
+    if(!t||!t.ok){ failed.push(s); return; }
+    if(!t.any){ empty.push(s); return; }
+    withData++; if(t.dup||t.extra) flags++; if(t.e>t.a) overSites++;
+    A+=t.a; E+=t.e; A1+=t.a1; E1+=t.e1; A2+=t.a2; E2+=t.e2;
+    var r=(s.range&&s.range.trim())?s.range.trim():'Unassigned';
+    if(!rg[r]){ rg[r]={n:0,a:0,e:0}; rgOrder.push(r); }
+    rg[r].n++; rg[r].a+=t.a; rg[r].e+=t.e;
+  });
+  if(failed.length) h+='<div class="load-err">⚠ '+failed.length+' of '+total+' site sheets could not be loaded, so the totals below exclude them: '
+    +failed.map(function(s){return s.no+'. '+s.comp;}).join(', ')+'. Press ↻ Reload to try again.</div>';
+  if(!withData){
+    h+='<div class="live-note">No expenditure figures have been entered in the site sheets yet.</div></div></div>';
+    el.innerHTML=h; return;
+  }
+  var B=A-E, U=utilPct(A,E);
+  h+='<div class="exp-stats">'
+    +'<div class="exp-stat"><div class="l">Allocated</div><div class="v">'+inrShort(A)+'</div><div class="s">₹'+inr(round2(A))+'</div></div>'
+    +'<div class="exp-stat"><div class="l">Expended</div><div class="v">'+inrShort(E)+'</div><div class="s">₹'+inr(round2(E))+'</div></div>'
+    +'<div class="exp-stat'+(B<0?' neg':'')+'"><div class="l">Balance</div><div class="v">'+(B<0?'⚠ ':'')+inrShort(B)+'</div><div class="s">'+(B<0?'Over-spent · ':'')+'₹'+inr(round2(B))+'</div></div>'
+    +'<div class="exp-stat"><div class="l">Utilisation</div><div class="v">'+(U===null?'—':U+'%')+'</div>'
+    +'<div class="exp-meter" title="Expended '+inrShort(E)+' of '+inrShort(A)+' allocated"><div class="'+(E>A?'over':'')+'" style="width:'+Math.min(U||0,100)+'%"></div></div></div>'
+    +'</div>';
+  if(overSites) h+='<div class="load-err" style="margin-top:10px">⚠ '+overSites+' site'+(overSites>1?'s have':' has')+' expended more than allocated — see the site-wise table.</div>';
+
+  h+='<div class="exp-cols"><div><div class="exp-sec">By year</div>';
+  [['Year 1 · प्रथम वर्ष',A1,E1],['Year 2 · द्वितीय वर्ष',A2,E2]].forEach(function(y){
+    var u=utilPct(y[1],y[2]);
+    h+='<div class="prog"><div class="top"><b>'+y[0]+'</b><span>'+inrShort(y[2])+' / '+inrShort(y[1])+' &middot; '+(u===null?'—':u+'%')+'</span></div>'
+      +'<div class="track" title="Expended ₹'+inr(round2(y[2]))+' of ₹'+inr(round2(y[1]))+'"><div class="fill'+(y[2]>y[1]?' low':'')+'" style="width:'+Math.min(u||0,100)+'%"></div></div></div>';
+  });
+  h+='</div><div><div class="exp-sec">By range</div><div class="table-scroll"><table class="mini-table"><thead><tr><th>Range</th><th class="n">Sites</th><th class="n">Allocated&nbsp;(₹)</th><th class="n">Expended&nbsp;(₹)</th><th class="n">Balance&nbsp;(₹)</th><th class="n">Util.</th></tr></thead><tbody>';
+  rgOrder.sort(function(a,b){return rg[b].a-rg[a].a;}).forEach(function(r){ h+='<tr><td>'+r+'</td><td class="n">'+rg[r].n+'</td>'+expRow(r,rg[r].a,rg[r].e)+'</tr>'; });
+  h+='<tr class="tot"><td>Total</td><td class="n">'+withData+'</td>'+expRow('',A,E)+'</tr></tbody></table></div></div></div>';
+
+  h+='<details class="exp-det"'+(openDet?' open':'')+'><summary>Site-wise breakdown ('+total+' sites) — use this to cross-check against each site in §2</summary><div class="table-scroll"><table class="mini-table">'
+    +'<thead><tr><th>#</th><th>Site</th><th>Range</th><th class="n">Allocated&nbsp;(₹)</th><th class="n">Expended&nbsp;(₹)</th><th class="n">Balance&nbsp;(₹)</th><th class="n">Util.</th></tr></thead><tbody>';
+  sites.forEach(function(s){
+    var t=st.sites[s.no], name=s.comp, note='';
+    if(t&&t.ok&&(t.dup||t.extra)) note=' <span class="flag" title="'+(t.dup?'Repeated S.No. rows in the sheet. ':'')+(t.extra?'Rows beyond the 48 standard works have amounts (not counted).':'')+'">⚠ check sheet</span>';
+    h+='<tr><td>'+s.no+'</td><td>'+name+note+'</td><td>'+(s.range||'—')+'</td>';
+    if(!t||!t.ok) h+='<td class="n flag" colspan="4">⚠ could not load</td>';
+    else if(!t.any) h+='<td class="n" colspan="4" style="color:var(--muted)">no figures entered yet</td>';
+    else h+=expRow(name,t.a,t.e);
+    h+='</tr>';
+  });
+  h+='<tr class="tot"><td></td><td>Total</td><td></td>'+expRow('',A,E)+'</tr></tbody></table></div></details>';
+
+  h+='<div class="exp-foot">Summed live from each site\'s sheet — the 48 standard works (Year 1 S.No. 1–23, Year 2 S.No. 24–48), exactly the rows shown in §2 Expenditure Monitoring. '
+    +withData+' of '+total+' sites have figures'+(empty.length?' · '+empty.length+' not yet filled':'')+(flags?' · '+flags+' flagged for a sheet check':'')
+    +' · loaded '+st.loadedAt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+'.</div>';
+  h+='</div></div>';
+  el.innerHTML=h;
+}
 function renderOverview(){
   var el=document.getElementById('ovBody'); if(!el) return;
   var totArea=0,totPlants=0,caCount=0,ranges={},rangeOrder=[];
@@ -804,7 +939,9 @@ function renderOverview(){
   });
   cRange+='</tbody></table></div></div>';
 
-  el.innerHTML=k+'<div class="ov-grid">'+c1+c2+cRange+cTop+cD+c3+cScheme+c4+'</div>';
+  el.innerHTML=k+'<div id="expRoll" class="exp-wrap"></div><div class="ov-grid">'+c1+c2+cRange+cTop+cD+c3+cScheme+c4+'</div>';
+  renderExpRollup();
+  if(!expRoll||expRoll.status==='idle') startExpRollup();
 }
 </script>
 </body>
